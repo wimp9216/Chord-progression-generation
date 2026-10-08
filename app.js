@@ -1,5 +1,5 @@
-import { KEYS, generate } from './chords.js';
-import { suggestProgressions } from './melody.js';
+import { KEYS, generate } from './chords.js?v=2';
+import { suggestProgressions } from './melody.js?v=2';
 const $ = id => document.getElementById(id);
 for (const key of KEYS) $('key').add(new Option(key, key));
 let progression = [], context, voices = [], timers = [];
@@ -62,7 +62,7 @@ let recording, stream, recordTimer, previewURL, audioBlob, analysis, sourceIsRec
 function updateAudioControls() {
   $('record').disabled = busy || acquiring || Boolean(stream);
   $('audio-file').disabled = busy || acquiring || Boolean(stream);
-  $('analyze').disabled = busy || acquiring || Boolean(stream) || !audioBlob;
+  $('analyze').disabled = busy || acquiring || Boolean(stream);
 }
 function releaseMicrophone() {
   clearTimeout(recordTimer);
@@ -71,13 +71,14 @@ function releaseMicrophone() {
   updateAudioControls();
 }
 function loadAudio(blob, recorded = false) {
+  if (recorded) $('audio-file').value = '';
   audioBlob = blob; analysis = null; sourceIsRecording = recorded;
   $('melody-preview').pause();
   if (previewURL) URL.revokeObjectURL(previewURL);
   previewURL = URL.createObjectURL(blob);
   $('melody-preview').src = previewURL; $('melody-preview').hidden = false;
   $('candidates').replaceChildren();
-  $('melody-status').textContent = '音声を読み込みました。キーとテンポを設定し、候補を生成してください。';
+  $('melody-status').textContent = `${blob.name || '録音音声'} を読み込みました。キーとテンポを設定し、候補を生成してください。`;
   updateAudioControls();
 }
 $('record').addEventListener('click', async () => {
@@ -99,15 +100,21 @@ $('record').addEventListener('click', async () => {
   finally { acquiring = false; updateAudioControls(); }
 });
 $('record-stop').addEventListener('click', () => { if (recording?.state === 'recording') { $('record-stop').disabled = true; recording.stop(); } });
-$('audio-file').addEventListener('change', () => {
+function readSelectedFile() {
   const file = $('audio-file').files[0];
-  if (!file) return;
-  if (file.size > 20 * 1024 * 1024) { $('melody-status').textContent = '20MB以下の音声ファイルを選んでください。'; $('audio-file').value = ''; return; }
-  loadAudio(file);
-});
+  if (!file) return true;
+  if (file.size > 20 * 1024 * 1024) {
+    $('melody-status').textContent = '20MB以下の音声ファイルを選んでください。';
+    return false;
+  }
+  if (audioBlob !== file) loadAudio(file);
+  return true;
+}
+for (const event of ['input', 'change']) $('audio-file').addEventListener(event, readSelectedFile);
+
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=2', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
@@ -116,6 +123,8 @@ function runAnalysis(samples, sampleRate) {
   });
 }
 $('analyze').addEventListener('click', async () => {
+  if (busy || acquiring || stream || !readSelectedFile()) return;
+  if (!audioBlob) { $('melody-status').textContent = '音声ファイルを選ぶか、メロディを録音してください。'; return; }
   busy = true; updateAudioControls(); stop(); $('melody-preview').pause(); $('candidates').replaceChildren();
   const settings = { key: $('key').value, mode: $('mode').value, bpm: Number($('tempo').value) };
   $('melody-status').textContent = '音声を解析しています…';
@@ -151,3 +160,7 @@ $('analyze').addEventListener('click', async () => {
   finally { busy = false; updateAudioControls(); }
 });
 window.addEventListener('pagehide', () => { if (recording?.state === 'recording') recording.stop(); releaseMicrophone(); if (previewURL) URL.revokeObjectURL(previewURL); });
+
+updateAudioControls();
+readSelectedFile();
+if (!audioBlob) $('melody-status').textContent = '音声ファイルを選ぶか、メロディを録音してください。';

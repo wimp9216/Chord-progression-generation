@@ -1,4 +1,4 @@
-import { KEYS } from './chords.js';
+import { KEYS } from './chords.js?v=2';
 
 // YIN difference function: identify a single fundamental, rather than loud harmonics.
 export function detectPitch(samples, sampleRate) {
