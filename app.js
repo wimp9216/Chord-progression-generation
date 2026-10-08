@@ -1,74 +1,22 @@
-import { PianoRoll } from './piano-roll.js?v=5';
-import { notesToAnalysis } from './midi.js?v=5';
-import { KEYS, generate } from './chords.js?v=5';
-import { estimateTempo, harmonizeMelody } from './melody.js?v=5';
+import { PianoRoll } from './piano-roll.js?v=6';
+import { notesToAnalysis } from './midi.js?v=6';
+import { KEYS } from './chords.js?v=6';
+import { estimateTempo, harmonizeMelody } from './melody.js?v=6';
 const $ = id => document.getElementById(id);
-for (const key of KEYS) $('key').add(new Option(key, key));
-let editor;
-let progression = [], context, voices = [], timers = [];
-function stop() {
-  timers.forEach(clearTimeout); timers = [];
-  voices.forEach(voice => { try { voice.stop(); } catch {} }); voices = [];
-  document.querySelectorAll('.chord').forEach(el => el.classList.remove('active'));
-  $('play').disabled = false; $('stop').disabled = true;
-  if ($('status').textContent === '再生中…') $('status').textContent = '再生を停止しました。';
-}
-function render(chosen) {
-  stop();
-  progression = chosen || generate({ key: $('key').value, mode: $('mode').value, bars: Number($('bars').value) });
-  $('chords').replaceChildren(...progression.map((chord, i) => {
-    const card = document.createElement('div'); card.className = 'chord';
-    const bar = document.createElement('span'); bar.textContent = `BAR ${String(i + 1).padStart(2, '0')}`;
-    const name = document.createElement('strong'); name.textContent = chord.name;
-    const degree = document.createElement('small'); degree.textContent = `第${chord.degree}音のコード`;
-    card.append(bar, name, degree); return card;
-  }));
-  $('summary').textContent = `${$('key').value} ${$('mode').value === 'major' ? 'メジャー' : 'マイナー'} / ${progression.length}小節`;
-  $('status').textContent = '';
-  if(editor && analysis)editor.setChords(progression,{offset:0,segmentDuration:240/Number($('tempo').value),duration:analysis.duration},'生成したコード進行');
-}
-$('generate').addEventListener('click', () => render());
-for (const id of ['key', 'mode', 'bars']) $(id).addEventListener('change', () => render());
-$('tempo').addEventListener('input', () => { $('tempo-value').textContent = `${$('tempo').value} BPM`; stop(); });
-$('stop').addEventListener('click', stop);
-$('play').addEventListener('click', async () => {
-  if (stream || acquiring || busy) { $('status').textContent = '録音・解析が終わってから試聴してください。'; return; }
-  editor.stop(); stop(); $('play').disabled = true; $('stop').disabled = false;
-  try {
-    context ||= new AudioContext(); await context.resume();
-    if (!$('play').disabled) return;
-    const duration = 240 / Number($('tempo').value), start = context.currentTime + 0.05;
-    progression.forEach((chord, i) => {
-      chord.notes.forEach(note => {
-        const oscillator = context.createOscillator(), gain = context.createGain();
-        oscillator.type = 'triangle'; oscillator.frequency.value = 440 * 2 ** ((note - 69) / 12);
-        const time = start + i * duration;
-        gain.gain.setValueAtTime(0, time); gain.gain.linearRampToValueAtTime(0.075, time + 0.04); gain.gain.exponentialRampToValueAtTime(0.001, time + duration - 0.03);
-        oscillator.connect(gain); gain.connect(context.destination); oscillator.start(time); oscillator.stop(time + duration); voices.push(oscillator);
-        oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-      });
-      timers.push(setTimeout(() => {
-        document.querySelectorAll('.chord').forEach((el, j) => el.classList.toggle('active', i === j));
-      }, 50 + i * duration * 1000));
-    });
-    timers.push(setTimeout(stop, 50 + progression.length * duration * 1000));
-    $('status').textContent = '再生中…';
-  } catch { stop(); $('status').textContent = 'このブラウザでは試聴できません。'; }
-});
+let editor, progression = [], context;
 $('copy').addEventListener('click', async () => {
+  if (!progression.length) return;
   const text = progression.map(chord => chord.name).join(' → ');
   try { await navigator.clipboard.writeText(text); $('status').textContent = 'コード進行をコピーしました。'; }
   catch { $('status').textContent = `こちらを選択してコピーしてください: ${text}`; }
 });
-render();
-
 let recording, stream, recordTimer, previewURL, audioBlob, analysis, sourceIsRecording = false, busy = false, acquiring = false;
 editor = new PianoRoll($('piano-roll'), (notes, duration) => {
   analysis = notesToAnalysis(notes, duration);
-  $('candidates').replaceChildren();
+  $('candidates').replaceChildren(); progression = []; $('copy').disabled = true; $('summary').textContent = '候補を再生成してください';
   $('melody-status').textContent = 'メロディを編集しました。候補を再生成してください。';
 });
-editor.beforePlay = () => { stop(); $('melody-preview').pause(); };
+editor.beforePlay = () => { $('melody-preview').pause(); };
 function updateAudioControls() {
   editor.setDisabled(busy || acquiring || Boolean(stream));
   $('record').disabled = busy || acquiring || Boolean(stream);
@@ -88,7 +36,7 @@ function loadAudio(blob, recorded = false) {
   if (previewURL) URL.revokeObjectURL(previewURL);
   previewURL = URL.createObjectURL(blob);
   $('melody-preview').src = previewURL; $('melody-preview').hidden = false;
-  $('candidates').replaceChildren();
+  $('candidates').replaceChildren(); progression = []; $('copy').disabled = true; $('summary').textContent = '音声の解析待ち';
   $('melody-status').textContent = `${blob.name || '録音音声'} を読み込みました。メロディから候補を生成できます。`;
   updateAudioControls();
 }
@@ -96,7 +44,7 @@ $('record').addEventListener('click', async () => {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     $('melody-status').textContent = '録音にはHTTPSと録音対応ブラウザが必要です。音声ファイルの読み込みをご利用ください。'; return;
   }
-  acquiring = true; editor.stop(); updateAudioControls(); stop(); $('melody-preview').pause();
+  acquiring = true; editor.stop(); updateAudioControls(); $('melody-preview').pause();
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     recording = new MediaRecorder(stream);
@@ -125,7 +73,7 @@ for (const event of ['input', 'change']) $('audio-file').addEventListener(event,
 
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js?v=5', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=6', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
@@ -136,7 +84,7 @@ function runAnalysis(samples, sampleRate) {
 $('analyze').addEventListener('click', async () => {
   if (busy || acquiring || stream || !readSelectedFile()) return;
   if (!audioBlob) { $('melody-status').textContent = '音声ファイルを選ぶか、メロディを録音してください。'; return; }
-  busy = true; editor.stop(); updateAudioControls(); stop(); $('melody-preview').pause(); $('candidates').replaceChildren();
+  busy = true; editor.stop(); updateAudioControls(); $('melody-preview').pause(); $('candidates').replaceChildren();
   $('melody-status').textContent = '音声を解析しています…';
   try {
     if (!analysis) {
@@ -156,7 +104,6 @@ $('analyze').addEventListener('click', async () => {
     const result = harmonizeMelody(analysis);
     const { candidates, tonality, tempo } = result;
     editor.bpm = tempo.bpm || 100;
-    const settings = { key: tonality.key, mode: tonality.mode, bpm: tempo.bpm || 100 };
     const detected = [...new Set(analysis.notes.map(note => KEYS[note.midi % 12]))];
     const modeName = mode => mode === 'major' ? 'メジャー' : 'マイナー';
     const rhythm = tempo.bpm ? `推定 ${tempo.bpm} BPM（拍の倍・半分になる可能性があります）` : 'テンポを特定できないため、音声を4区間に分けて提案します（試聴は100 BPM）';
@@ -168,8 +115,15 @@ $('analyze').addEventListener('click', async () => {
       const text = document.createElement('p'); text.textContent = candidate.progression.map(chord => chord.name).join(' → ');
       const button = document.createElement('button'); button.textContent = 'この候補を選択';
       button.addEventListener('click', () => {
-        $('key').value = settings.key; $('mode').value = settings.mode; $('tempo').value = settings.bpm; $('tempo-value').textContent = `${settings.bpm} BPM`;
-        render(candidate.progression); editor.setChords(candidate.progression,result.timing,`候補 ${i+1}`); $('status').textContent = `候補 ${i + 1} を選択しました。「試聴する」でコードを確認できます。`;
+        progression = candidate.progression;
+        editor.setChords(progression, result.timing, `候補 ${i+1}`);
+        editor.status(`候補 ${i+1} のコードを表示しています。メロディとコードを同期再生できます。`);
+        if (!busy) editor.chordGrid.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        $('candidates').querySelectorAll('.candidate').forEach((el,index) => { el.classList.toggle('selected',index===i); el.querySelector('button').setAttribute('aria-pressed',String(index===i)); });
+        $('summary').textContent = `候補 ${i+1} · ${progression.map(chord=>chord.name).join(' → ')}`;
+        $('copy').disabled = false;
+        $('status').textContent = `候補 ${i+1} をコードトラックに反映しました。`;
+
       });
       card.append(title, text, button); $('candidates').append(card);
       if(i===0)button.click();

@@ -1,10 +1,10 @@
-import { framesToNotes, normalizeNote, encodeMidi, progressionToNotes } from './midi.js?v=5';
+import { framesToNotes, normalizeNote, encodeMidi, progressionToNotes } from './midi.js?v=6';
 const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const noteName=midi=>`${names[midi%12]}${Math.floor(midi/12)-1}`;
 const clone=notes=>notes.map(n=>({...n}));
 export class PianoRoll {
   constructor(root,onChange) {
-    this.root=root;this.onChange=onChange;this.notes=[];this.selected=-1;this.history=[];this.future=[];this.voices=[];this.px=90;this.row=22;
+    this.root=root;this.onChange=onChange;this.notes=[];this.selected=-1;this.history=[];this.future=[];this.voices=[];this.duration=4;this.bpm=100;this.px=90;this.row=22;
     root.innerHTML=`<h3>メロディ・ピアノロール</h3><p>音符をドラッグして音程・位置を変更。右端をドラッグして長さを変更。空白をダブルクリックして追加できます。時間は秒表示です。</p>
     <div class="actions roll-audio"><button data-action="play">▶ メロディのみ再生</button><button data-action="together">▶ メロディ＋コードを再生</button><button data-action="stop">■ 停止</button><span class="transport-time">0.00秒</span></div>
     <div class="roll-scroll"><div class="roll-grid" role="group" aria-label="メロディの音符編集"></div></div>
@@ -25,11 +25,12 @@ export class PianoRoll {
       try {const normalized=normalizeNote(note);this.commit();this.notes[this.selected]=normalized;this.changed();}catch{this.status('数値を入力してください。');}
     };
     for(const action of ['add','delete','undo','redo','reset','play','stop','download'])root.querySelector(`[data-action=${action}]`).onclick=()=>this[action]();
+    this.draw();this.status('音声を読み込んで解析すると、ここにメロディが表示されます。');
   }
   status(text){this.root.querySelector('.roll-status').textContent=text;}
   setDisabled(disabled){this.disabled=disabled;this.root.querySelectorAll('button,input').forEach(el=>el.disabled=disabled);this.grid.inert=disabled;this.root.querySelector('[data-action=together]').disabled=disabled||!this.chordNotes.length;}
   load(analysis,bpm=100){this.stop();this.notes=framesToNotes(analysis.notes,analysis.duration,analysis.onsets);this.original=clone(this.notes);this.duration=analysis.duration;this.bpm=bpm;this.selected=-1;this.history=[];this.future=[];this.root.hidden=false;this.chordNotes=[];this.draw();this.grid.parentElement.scrollTop=Math.max(0,(this.high-Math.max(60,...this.notes.map(n=>n.midi))-2)*this.row);this.status(`${this.notes.length}音を検出しました。編集後は「メロディから候補を生成」でコードを再生成できます。`);}
-  clear(){this.stop();this.notes=[];this.chordNotes=[];this.root.hidden=true;}
+  clear(){this.stop();this.notes=[];this.chordNotes=[];this.duration=4;this.draw();this.root.hidden=false;}
   commit(){this.history.push(clone(this.notes));if(this.history.length>50)this.history.shift();this.future=[];}
   changed(){this.stop();this.chordNotes=[];this.draw();this.onChange(clone(this.notes),this.duration);this.status('編集を反映しました。コード候補を再生成してください。');}
   add(note={midi:60,start:0,duration:.5}){if(this.disabled)return;this.commit();this.notes.push(normalizeNote(note));this.selected=this.notes.length-1;this.changed();}
@@ -39,7 +40,7 @@ export class PianoRoll {
   reset(){this.commit();this.notes=clone(this.original);this.selected=-1;this.changed();}
   fields(){const note=this.notes[this.selected];for(const field of ['midi','start','duration']){const input=this.root.querySelector(`[data-field=${field}]`);input.value=note?(field==='midi'?note[field]:note[field].toFixed(3)):'';}}
   draw(){
-    this.high=Math.min(108,Math.max(84,...this.notes.map(n=>n.midi+3)));this.low=Math.max(24,Math.min(48,...this.notes.map(n=>n.midi-3)));
+    this.high=this.notes.length?Math.min(108,Math.max(...this.notes.map(n=>n.midi))+2):72;this.low=this.notes.length?Math.max(24,Math.min(...this.notes.map(n=>n.midi))-2):60;
     const duration=Math.max(this.duration,...this.notes.map(n=>n.start+n.duration),...this.chordNotes.map(n=>n.start+n.duration));
     this.grid.style.width=`${60+Math.max(4,duration)*this.px+10}px`;this.grid.style.height=`${26+(this.high-this.low+1)*this.row}px`;this.grid.replaceChildren();
     for(let second=0;second<=duration;second++){const marker=document.createElement('span');marker.className='roll-time';marker.style.left=`${60+second*this.px}px`;marker.textContent=`${second}s`;this.grid.append(marker);}
@@ -64,16 +65,16 @@ export class PianoRoll {
     });this.fields();this.drawChords();
   }
   setChords(progression,timing,label='選択したコード進行') {
-    this.stop();this.chordNotes=progressionToNotes(progression,timing);this.chordLabel=label;this.draw();this.chordGrid.parentElement.scrollTop=Math.max(0,(this.chordHigh-Math.max(60,...this.chordNotes.map(n=>n.midi))-2)*this.row);
+    this.stop();this.chordNotes=progressionToNotes(progression,timing);this.chordLabel=label;this.draw();this.grid.parentElement.scrollLeft=0;this.chordGrid.parentElement.scrollLeft=0;this.chordGrid.parentElement.scrollTop=0;
   }
   drawChords(){
     this.chordGrid.replaceChildren();this.chordGrid.style.width=this.grid.style.width;
-    const high=Math.max(84,...this.chordNotes.map(n=>n.midi+2)),low=Math.min(48,...this.chordNotes.map(n=>n.midi-2));
-    this.chordHigh=high;this.chordGrid.style.height=`${26+(high-low+1)*this.row}px`;
+    const chordRow=16,high=this.chordNotes.length?Math.max(...this.chordNotes.map(n=>n.midi))+1:72,low=this.chordNotes.length?Math.min(...this.chordNotes.map(n=>n.midi))-1:60;
+    this.chordHigh=high;this.chordGrid.style.height=`${26+(high-low+1)*chordRow}px`;
     this.root.querySelector('.chord-roll-title').textContent=this.chordNotes.length?`コード・ピアノロール · ${this.chordLabel}`:'コード・ピアノロール（候補を生成すると表示されます）';
     for(const marker of this.grid.querySelectorAll('.roll-time'))this.chordGrid.append(marker.cloneNode(true));
-    for(let midi=high;midi>=low;midi--){const label=document.createElement('span');label.className='roll-key';label.style.top=`${26+(high-midi)*this.row}px`;label.textContent=noteName(midi);this.chordGrid.append(label);}
-    for(const note of this.chordNotes){const el=document.createElement('div');el.className='chord-roll-note';el.dataset.start=note.start;el.dataset.end=note.start+note.duration;el.style.left=`${60+note.start*this.px}px`;el.style.top=`${26+(high-note.midi)*this.row+1}px`;el.style.width=`${note.duration*this.px}px`;el.textContent=`${note.name} · ${noteName(note.midi)}`;el.setAttribute('aria-label',`${note.name} ${noteName(note.midi)} 開始 ${note.start.toFixed(2)}秒 長さ ${note.duration.toFixed(2)}秒`);this.chordGrid.append(el);}
+    for(let midi=high;midi>=low;midi--){const label=document.createElement('span');label.className='roll-key';label.style.top=`${26+(high-midi)*chordRow}px`;label.style.height='16px';label.textContent=noteName(midi);this.chordGrid.append(label);}
+    for(const note of this.chordNotes){const el=document.createElement('div');el.className='chord-roll-note';el.dataset.start=note.start;el.dataset.end=note.start+note.duration;el.style.left=`${60+note.start*this.px}px`;el.style.top=`${26+(high-note.midi)*chordRow+1}px`;el.style.width=`${note.duration*this.px}px`;el.textContent=`${note.name} · ${noteName(note.midi)}`;el.setAttribute('aria-label',`${note.name} ${noteName(note.midi)} 開始 ${note.start.toFixed(2)}秒 長さ ${note.duration.toFixed(2)}秒`);this.chordGrid.append(el);}
     this.root.querySelector('[data-action=together]').disabled=this.disabled||!this.chordNotes.length;
   }
   stop(){
