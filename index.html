@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Chord Canvas — コード進行生成</title><link rel="stylesheet" href="./style.css"></head>
+<body><main>
+<header><span class="badge">CHORD CANVAS</span><p>次の曲の、最初のひらめき。</p><h1>コードから<br>音楽をはじめよう。</h1><p class="intro">キーと雰囲気を選ぶだけ。新しいコード進行を見つけて、音で確かめましょう。</p></header>
+<section class="panel" aria-label="コード進行の設定"><div class="controls">
+<label>キー<select id="key"></select></label>
+<label>モード<select id="mode"><option value="major">メジャー · 明るい</option><option value="minor">マイナー · 落ち着いた</option></select></label>
+<label>小節数<select id="bars"><option>4</option><option>8</option><option>16</option></select></label>
+<label>テンポ <span id="tempo-value">100 BPM</span><input id="tempo" type="range" min="50" max="180" value="100"></label>
+</div><button id="generate" class="primary">新しい進行を生成 ↗</button></section>
+<section aria-label="生成されたコード進行"><div class="result-heading"><h2>あなたのコード進行</h2><span id="summary"></span></div><div id="chords" class="chords"></div>
+<div class="actions"><button id="play">▶ 試聴する</button><button id="stop" disabled>■ 停止</button><button id="copy">進行をコピー</button></div><p id="status" role="status" aria-live="polite"></p></section>
+<footer>1コードにつき1小節（4拍） · ダイアトニックコードを使用 · 音量を控えめにして試聴してください</footer>
+</main><script type="module" src="./app.js"></script></body></html>
