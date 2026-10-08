@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-const assets = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/chords.js', ['chords.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']]]);
+const assets = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/chords.js', ['chords.js', 'text/javascript']], ['/style.css', ['style.css', 'text/css']], ['/melody.js', ['melody.js', 'text/javascript']], ['/melody-worker.js', ['melody-worker.js', 'text/javascript']]]);
 const port = Number(process.env.PORT || 3000);
 createServer(async (req, res) => {
   const asset = assets.get(new URL(req.url, 'http://localhost').pathname);
