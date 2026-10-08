@@ -1,4 +1,4 @@
-import { KEYS } from './chords.js?v=4';
+import { KEYS } from './chords.js?v=5';
 
 // YIN difference function: identify a single fundamental, rather than loud harmonics.
 export function detectPitch(samples, sampleRate) {
@@ -150,5 +150,5 @@ export function harmonizeMelody(analysis) {
   const offset = tempo.bpm ? (analysis.onsets?.[0] || 0) : 0;
   const options = { ...analysis, key: tonality.key, mode: tonality.mode, bpm: tempo.bpm || 100, offset };
   if (!tempo.bpm) options.segmentDuration = analysis.duration / 4;
-  return { tonality, tempo, chords: diatonicChords(tonality.key, tonality.mode), candidates: suggestProgressions(options) };
+  return { timing: { offset, segmentDuration: options.segmentDuration || 240/options.bpm, duration: analysis.duration }, tonality, tempo, chords: diatonicChords(tonality.key, tonality.mode), candidates: suggestProgressions(options) };
 }

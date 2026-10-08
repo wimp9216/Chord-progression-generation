@@ -1,9 +1,10 @@
-import { PianoRoll } from './piano-roll.js?v=4';
-import { notesToAnalysis } from './midi.js?v=4';
-import { KEYS, generate } from './chords.js?v=4';
-import { estimateTempo, harmonizeMelody } from './melody.js?v=4';
+import { PianoRoll } from './piano-roll.js?v=5';
+import { notesToAnalysis } from './midi.js?v=5';
+import { KEYS, generate } from './chords.js?v=5';
+import { estimateTempo, harmonizeMelody } from './melody.js?v=5';
 const $ = id => document.getElementById(id);
 for (const key of KEYS) $('key').add(new Option(key, key));
+let editor;
 let progression = [], context, voices = [], timers = [];
 function stop() {
   timers.forEach(clearTimeout); timers = [];
@@ -24,6 +25,7 @@ function render(chosen) {
   }));
   $('summary').textContent = `${$('key').value} ${$('mode').value === 'major' ? 'メジャー' : 'マイナー'} / ${progression.length}小節`;
   $('status').textContent = '';
+  if(editor && analysis)editor.setChords(progression,{offset:0,segmentDuration:240/Number($('tempo').value),duration:analysis.duration},'生成したコード進行');
 }
 $('generate').addEventListener('click', () => render());
 for (const id of ['key', 'mode', 'bars']) $(id).addEventListener('change', () => render());
@@ -61,7 +63,7 @@ $('copy').addEventListener('click', async () => {
 render();
 
 let recording, stream, recordTimer, previewURL, audioBlob, analysis, sourceIsRecording = false, busy = false, acquiring = false;
-const editor = new PianoRoll($('piano-roll'), (notes, duration) => {
+editor = new PianoRoll($('piano-roll'), (notes, duration) => {
   analysis = notesToAnalysis(notes, duration);
   $('candidates').replaceChildren();
   $('melody-status').textContent = 'メロディを編集しました。候補を再生成してください。';
@@ -123,7 +125,7 @@ for (const event of ['input', 'change']) $('audio-file').addEventListener(event,
 
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js?v=4', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=5', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
@@ -167,9 +169,10 @@ $('analyze').addEventListener('click', async () => {
       const button = document.createElement('button'); button.textContent = 'この候補を選択';
       button.addEventListener('click', () => {
         $('key').value = settings.key; $('mode').value = settings.mode; $('tempo').value = settings.bpm; $('tempo-value').textContent = `${settings.bpm} BPM`;
-        render(candidate.progression); $('status').textContent = `候補 ${i + 1} を選択しました。「試聴する」でコードを確認できます。`;
+        render(candidate.progression); editor.setChords(candidate.progression,result.timing,`候補 ${i+1}`); $('status').textContent = `候補 ${i + 1} を選択しました。「試聴する」でコードを確認できます。`;
       });
       card.append(title, text, button); $('candidates').append(card);
+      if(i===0)button.click();
     });
   } catch (error) { $('melody-status').textContent = error.message; }
   finally { busy = false; updateAudioControls(); }

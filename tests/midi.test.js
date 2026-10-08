@@ -32,3 +32,14 @@ test('MIDI export has valid header, timing, tempo and paired note events',()=>{
  while(cursor<bytes.length){tick+=variable();const status=bytes[cursor++];if(status===255){const kind=bytes[cursor++],length=variable();if(kind===81)assert.equal(bytes[cursor]*65536+bytes[cursor+1]*256+bytes[cursor+2],500000);cursor+=length;}else{events.push([tick,status,bytes[cursor++],bytes[cursor++]]);}}
  assert.deepEqual(events,[[480,144,60,80],[1440,128,60,0],[1440,144,64,80],[1920,128,64,0]]);
 });
+
+import { progressionToNotes } from '../midi.js';
+test('chord roll notes preserve inferred offset and clip the last chord to the audio duration',()=>{
+ const result=progressionToNotes([{name:'C',notes:[60,64,67]},{name:'G',notes:[67,71,74]}],{offset:.3,segmentDuration:2,duration:3});
+ assert.equal(result.length,6);assert.ok(result.slice(0,3).every(n=>n.start===.3&&n.duration===2));assert.ok(result.slice(3).every(n=>n.start===2.3&&Math.abs(n.duration-.7)<1e-8));
+});
+test('unknown tempo uses the exact same phrase sections for chord harmony and playback',()=>{
+ const analysis={notes:[{midi:60,time:.2,duration:.2,confidence:1}],onsets:[],duration:5};
+ const harmony=harmonizeMelody(analysis),events=progressionToNotes(harmony.candidates[0].progression,harmony.timing);
+ assert.equal(harmony.timing.segmentDuration,1.25);assert.deepEqual([...new Set(events.map(n=>n.start))],[0,1.25,2.5,3.75]);assert.ok(events.every(n=>n.start+n.duration<=5));
+});

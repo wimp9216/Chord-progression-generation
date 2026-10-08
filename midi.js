@@ -45,3 +45,11 @@ export function encodeMidi(notes, bpm=100) {
   const size=track.length;
   return new Uint8Array([77,84,104,100,0,0,0,6,0,0,0,1,1,224,77,84,114,107,(size>>>24)&255,(size>>>16)&255,(size>>>8)&255,size&255,...track]);
 }
+
+export function progressionToNotes(progression, { offset = 0, segmentDuration, duration }) {
+  if (!Number.isFinite(segmentDuration) || segmentDuration <= 0 || !Number.isFinite(duration) || !Number.isFinite(offset)) throw new RangeError('Invalid chord timing');
+  return progression.flatMap((chord, index) => {
+    const start = offset + index * segmentDuration, length = Math.min(segmentDuration, duration - start);
+    return length > 0 ? chord.notes.map(midi => ({ midi, start, duration: length, name: chord.name })) : [];
+  });
+}
