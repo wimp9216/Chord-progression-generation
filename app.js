@@ -1,5 +1,5 @@
-import { KEYS, generate } from './chords.js?v=2';
-import { suggestProgressions } from './melody.js?v=2';
+import { KEYS, generate } from './chords.js?v=3';
+import { harmonizeMelody } from './melody.js?v=3';
 const $ = id => document.getElementById(id);
 for (const key of KEYS) $('key').add(new Option(key, key));
 let progression = [], context, voices = [], timers = [];
@@ -24,7 +24,7 @@ function render(chosen) {
   $('status').textContent = '';
 }
 $('generate').addEventListener('click', () => render());
-for (const id of ['key', 'mode', 'bars']) $(id).addEventListener('change', () => { render(); $('candidates').replaceChildren(); });
+for (const id of ['key', 'mode', 'bars']) $(id).addEventListener('change', () => render());
 $('tempo').addEventListener('input', () => { $('tempo-value').textContent = `${$('tempo').value} BPM`; stop(); });
 $('stop').addEventListener('click', stop);
 $('play').addEventListener('click', async () => {
@@ -78,7 +78,7 @@ function loadAudio(blob, recorded = false) {
   previewURL = URL.createObjectURL(blob);
   $('melody-preview').src = previewURL; $('melody-preview').hidden = false;
   $('candidates').replaceChildren();
-  $('melody-status').textContent = `${blob.name || '録音音声'} を読み込みました。キーとテンポを設定し、候補を生成してください。`;
+  $('melody-status').textContent = `${blob.name || '録音音声'} を読み込みました。メロディから候補を生成できます。`;
   updateAudioControls();
 }
 $('record').addEventListener('click', async () => {
@@ -114,7 +114,7 @@ for (const event of ['input', 'change']) $('audio-file').addEventListener(event,
 
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js?v=2', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=3', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
@@ -126,7 +126,6 @@ $('analyze').addEventListener('click', async () => {
   if (busy || acquiring || stream || !readSelectedFile()) return;
   if (!audioBlob) { $('melody-status').textContent = '音声ファイルを選ぶか、メロディを録音してください。'; return; }
   busy = true; updateAudioControls(); stop(); $('melody-preview').pause(); $('candidates').replaceChildren();
-  const settings = { key: $('key').value, mode: $('mode').value, bpm: Number($('tempo').value) };
   $('melody-status').textContent = '音声を解析しています…';
   try {
     if (!analysis) {
@@ -142,9 +141,14 @@ $('analyze').addEventListener('click', async () => {
       }
       analysis = await runAnalysis(samples, buffer.sampleRate);
     }
-    const candidates = suggestProgressions({ ...analysis, ...settings });
+    const result = harmonizeMelody(analysis);
+    const { candidates, tonality, tempo } = result;
+    const settings = { key: tonality.key, mode: tonality.mode, bpm: tempo.bpm || 100 };
     const detected = [...new Set(analysis.notes.map(note => KEYS[note.midi % 12]))];
-    $('melody-status').textContent = `検出音: ${detected.join('・')} / ${analysis.duration.toFixed(1)}秒。${settings.key} ${settings.mode === 'major' ? 'メジャー' : 'マイナー'}・${settings.bpm} BPMの候補です。伴奏のある音源では精度が下がります。`;
+    const modeName = mode => mode === 'major' ? 'メジャー' : 'マイナー';
+    const rhythm = tempo.bpm ? `推定 ${tempo.bpm} BPM（拍の倍・半分になる可能性があります）` : 'テンポを特定できないため、音声を4区間に分けて提案します（試聴は100 BPM）';
+    $('melody-status').textContent = `検出音: ${detected.join('・')} / 推定キー: ${tonality.key} ${modeName(tonality.mode)}。${rhythm}。ダイアトニックコード: ${result.chords.join('・')}。${tonality.uncertain ? `キーは曖昧です。別の可能性: ${tonality.alternatives.map(t => `${t.key} ${modeName(t.mode)}`).join('、')}。` : ''}伴奏付き音源では精度が下がります。`;
+
     candidates.forEach((candidate, i) => {
       const card = document.createElement('div'); card.className = 'candidate';
       const title = document.createElement('h3'); title.textContent = `候補 ${i + 1}`;
