@@ -1,7 +1,7 @@
-import { PianoRoll } from './piano-roll.js?v=6';
-import { notesToAnalysis } from './midi.js?v=6';
-import { KEYS } from './chords.js?v=6';
-import { estimateTempo, harmonizeMelody } from './melody.js?v=6';
+import { PianoRoll } from './piano-roll.js?v=7';
+import { notesToAnalysis } from './midi.js?v=7';
+import { KEYS } from './chords.js?v=7';
+import { estimateTempo, harmonizeMelody } from './melody.js?v=7';
 const $ = id => document.getElementById(id);
 let editor, progression = [], context;
 $('copy').addEventListener('click', async () => {
@@ -73,7 +73,7 @@ for (const event of ['input', 'change']) $('audio-file').addEventListener(event,
 
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js?v=6', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=7', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };

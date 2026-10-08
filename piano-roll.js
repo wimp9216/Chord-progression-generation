@@ -1,4 +1,4 @@
-import { framesToNotes, normalizeNote, encodeMidi, progressionToNotes } from './midi.js?v=6';
+import { framesToNotes, normalizeNote, encodeMidi, progressionToNotes } from './midi.js?v=7';
 const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const noteName=midi=>`${names[midi%12]}${Math.floor(midi/12)-1}`;
 const clone=notes=>notes.map(n=>({...n}));
@@ -29,7 +29,7 @@ export class PianoRoll {
   }
   status(text){this.root.querySelector('.roll-status').textContent=text;}
   setDisabled(disabled){this.disabled=disabled;this.root.querySelectorAll('button,input').forEach(el=>el.disabled=disabled);this.grid.inert=disabled;this.root.querySelector('[data-action=together]').disabled=disabled||!this.chordNotes.length;}
-  load(analysis,bpm=100){this.stop();this.notes=framesToNotes(analysis.notes,analysis.duration,analysis.onsets);this.original=clone(this.notes);this.duration=analysis.duration;this.bpm=bpm;this.selected=-1;this.history=[];this.future=[];this.root.hidden=false;this.chordNotes=[];this.draw();this.grid.parentElement.scrollTop=Math.max(0,(this.high-Math.max(60,...this.notes.map(n=>n.midi))-2)*this.row);this.status(`${this.notes.length}音を検出しました。編集後は「メロディから候補を生成」でコードを再生成できます。`);}
+  load(analysis,bpm=100){this.stop();this.notes=framesToNotes(analysis.notes,analysis.duration,analysis.onsets);this.original=clone(this.notes);this.duration=analysis.duration;this.bpm=bpm;this.selected=-1;this.history=[];this.future=[];this.root.hidden=false;this.chordNotes=[];this.draw();this.grid.parentElement.scrollTop=Math.max(0,(this.high-Math.max(60,...this.notes.map(n=>n.midi))-2)*this.row);this.status(`${this.notes.length}音にまとめました（短いピッチの揺れを補正）。編集後は「メロディから候補を生成」でコードを再生成できます。`);}
   clear(){this.stop();this.notes=[];this.chordNotes=[];this.duration=4;this.draw();this.root.hidden=false;}
   commit(){this.history.push(clone(this.notes));if(this.history.length>50)this.history.shift();this.future=[];}
   changed(){this.stop();this.chordNotes=[];this.draw();this.onChange(clone(this.notes),this.duration);this.status('編集を反映しました。コード候補を再生成してください。');}

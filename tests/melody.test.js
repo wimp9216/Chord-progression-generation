@@ -95,3 +95,37 @@ test('sample analysis extracts attacks and feeds automatic harmony end to end', 
   assert.equal(result.tonality.key,'C'); assert.equal(result.tonality.mode,'major');
   assert.equal(result.tempo.bpm,120);
 });
+
+import { stabilizePitchFrames } from '../melody.js';
+import { framesToNotes } from '../midi.js';
+function pitchFrames(pitches, start=0) { return pitches.map((pitchMidi,i)=>({pitchMidi,midi:Math.round(pitchMidi),time:start+i*.05+.025,duration:.05,confidence:1})); }
+test('vibrato across semitone rounding boundaries becomes one intended note',()=>{
+ const frames=pitchFrames(Array.from({length:40},(_,i)=>60+.65*Math.sin(2*Math.PI*6*i*.05)));
+ const result=stabilizePitchFrames(frames);
+ assert.ok(result.every(n=>n.midi===60));assert.equal(framesToNotes(result,2).length,1);
+});
+test('slightly sharp singing is centered without semitone chatter',()=>{
+ const result=stabilizePitchFrames(pitchFrames(Array.from({length:30},(_,i)=>60.3+.3*Math.sin(i*1.5))));
+ assert.ok(result.every(n=>n.midi===60));
+});
+test('a brief octave tracking error does not create a false note',()=>{
+ const frames=pitchFrames([60,60,60,60,72,60,60,60]);
+ assert.ok(stabilizePitchFrames(frames).every(n=>n.midi===60));
+});
+test('sustained semitone changes survive and retain their original timing',()=>{
+ const frames=pitchFrames([...Array(10).fill(60),...Array(10).fill(61)]);
+ const notes=framesToNotes(stabilizePitchFrames(frames),1);
+ assert.deepEqual(notes.map(n=>n.midi),[60,61]);assert.ok(Math.abs(notes[1].start-.5)<1e-8);
+});
+test('new attacks and rests protect short intentional notes',()=>{
+ const frames=pitchFrames([60,60,60,60,62,62,60,60]);
+ const notes=framesToNotes(stabilizePitchFrames(frames,[.2,.3]),.4,[.2,.3]);
+ assert.deepEqual(notes.map(n=>n.midi),[60,62,60]);
+ const rested=[...pitchFrames([60,60,60]),...pitchFrames([62,62,62],.5)];
+ assert.deepEqual(framesToNotes(stabilizePitchFrames(rested),.65).map(n=>n.midi),[60,62]);
+});
+test('actual vibrato audio is stabilized before piano roll and harmony analysis',()=>{
+ const rate=8000;let phase=0;
+ const samples=Float32Array.from({length:rate*2},(_,i)=>{const pitch=60+.65*Math.sin(2*Math.PI*5.5*i/rate);phase+=2*Math.PI*440*2**((pitch-69)/12)/rate;return .2*Math.sin(phase);});
+ const analysis=analyzeSamples(samples,rate);assert.ok(analysis.notes.length>30);assert.ok(analysis.notes.every(n=>n.midi===60));assert.equal(framesToNotes(analysis.notes,2,analysis.onsets).length,1);
+});

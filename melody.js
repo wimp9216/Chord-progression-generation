@@ -1,4 +1,4 @@
-import { KEYS } from './chords.js?v=6';
+import { KEYS } from './chords.js?v=7';
 
 // YIN difference function: identify a single fundamental, rather than loud harmonics.
 export function detectPitch(samples, sampleRate) {
@@ -21,7 +21,8 @@ export function detectPitch(samples, sampleRate) {
     const left = difference[lag - 1], middle = difference[lag], right = difference[lag + 1] ?? middle;
     const denominator = 2 * (2 * middle - right - left);
     const offset = denominator ? (right - left) / denominator : 0;
-    return { midi: Math.round(69 + 12 * Math.log2((sampleRate / (lag + offset)) / 440)), confidence: 1 - middle };
+    const pitchMidi = 69 + 12 * Math.log2((sampleRate / (lag + offset)) / 440);
+    return { midi: Math.round(pitchMidi), pitchMidi, confidence: 1 - middle };
   }
   return null;
 }
@@ -54,7 +55,7 @@ export function analyzeSamples(samples, sampleRate) {
     }
     previousEnergy = energy;
   }
-  return { notes, onsets, duration: samples.length / sampleRate };
+  return { notes: stabilizePitchFrames(notes, onsets), onsets, duration: samples.length / sampleRate };
 }
 
 export function suggestProgressions({ notes, duration, key = 'C', mode = 'major', bpm = 100, segmentDuration, offset = 0 }) {
@@ -151,4 +152,44 @@ export function harmonizeMelody(analysis) {
   const options = { ...analysis, key: tonality.key, mode: tonality.mode, bpm: tempo.bpm || 100, offset };
   if (!tempo.bpm) options.segmentDuration = analysis.duration / 4;
   return { timing: { offset, segmentDuration: options.segmentDuration || 240/options.bpm, duration: analysis.duration }, tonality, tempo, chords: diatonicChords(tonality.key, tonality.mode), candidates: suggestProgressions(options) };
+}
+
+
+// Stable note centers with a dead band and sustained-change requirement.
+// Silence and new attacks form independent phrases; changes are backdated
+// to their first frame so the confirmation window does not delay note starts.
+export function stabilizePitchFrames(frames, onsets = []) {
+  if (!frames.length) return [];
+  const sorted = [...frames].sort((a,b)=>a.time-b.time), phrases=[];
+  for (const frame of sorted) {
+    const phrase=phrases.at(-1),previous=phrase?.at(-1);
+    const freshAttack=previous && onsets.some(t=>t>previous.time && t<=frame.time);
+    if(!previous || frame.time-previous.time>.09 || freshAttack) phrases.push([frame]);
+    else phrase.push(frame);
+  }
+  const median = values => {
+    const ordered=[...values].sort((a,b)=>a.value-b.value);
+    const total=ordered.reduce((sum,n)=>sum+n.weight,0);let weight=0;
+    for(const n of ordered){weight+=n.weight;if(weight>=total/2)return n.value;}
+    return ordered.at(-1).value;
+  };
+  const value = frame => ({value: frame.pitchMidi ?? frame.midi, weight: Math.max(.01,frame.confidence ?? 1)*frame.duration});
+  return phrases.flatMap(phrase=>{
+    const filtered=phrase.map((frame,i)=>median(phrase.slice(Math.max(0,i-1),i+2).map(value)));
+    const seed=phrase.filter(frame=>frame.time-phrase[0].time<.2);
+    let current=Math.round(median(seed.map(value))),pending=null,start=0,length=0;
+    const result=phrase.map(frame=>({...frame,midi:current}));
+    for(let i=0;i<phrase.length;i++) {
+      const pitch=filtered[i],target=Math.round(pitch);
+      // Adjacent semitones require departure by 75 cents, reducing vibrato chatter.
+      if(target===current || Math.abs(pitch-current)<.75){pending=null;length=0;}
+      else {
+        if(pending!==target){pending=target;start=i;length=0;}
+        length+=phrase[i].duration;
+        if(length>=.12-1e-8){current=target;for(let j=start;j<=i;j++)result[j].midi=current;pending=null;length=0;}
+      }
+      result[i].midi=current;
+    }
+    return result;
+  });
 }
