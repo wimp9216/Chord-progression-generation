@@ -18,9 +18,10 @@
 <audio id="melody-preview" controls hidden></audio>
 <button id="analyze">メロディから候補を生成</button>
 <p id="melody-status" role="status" aria-live="polite">音声機能を準備しています。この表示が続く場合はページを再読み込みしてください。</p>
+<section id="piano-roll" hidden aria-label="メロディ編集"></section>
 <div id="candidates"></div>
 </section>
 <section aria-label="生成されたコード進行"><div class="result-heading"><h2>あなたのコード進行</h2><span id="summary"></span></div><div id="chords" class="chords"></div>
 <div class="actions"><button id="play">▶ 試聴する</button><button id="stop" disabled>■ 停止</button><button id="copy">進行をコピー</button></div><p id="status" role="status" aria-live="polite"></p></section>
 <footer>1コードにつき1小節（4拍） · ダイアトニックコードを使用 · 音量を控えめにして試聴してください</footer>
-</main><script type="module" src="./app.js?v=3" onerror="document.getElementById('melody-status').textContent='音声機能を読み込めませんでした。ページを再読み込みしてください。'"></script></body></html>
+</main><script type="module" src="./app.js?v=4" onerror="document.getElementById('melody-status').textContent='音声機能を読み込めませんでした。ページを再読み込みしてください。'"></script></body></html>

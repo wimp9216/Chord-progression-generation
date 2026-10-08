@@ -1,5 +1,7 @@
-import { KEYS, generate } from './chords.js?v=3';
-import { harmonizeMelody } from './melody.js?v=3';
+import { PianoRoll } from './piano-roll.js?v=4';
+import { notesToAnalysis } from './midi.js?v=4';
+import { KEYS, generate } from './chords.js?v=4';
+import { estimateTempo, harmonizeMelody } from './melody.js?v=4';
 const $ = id => document.getElementById(id);
 for (const key of KEYS) $('key').add(new Option(key, key));
 let progression = [], context, voices = [], timers = [];
@@ -29,7 +31,7 @@ $('tempo').addEventListener('input', () => { $('tempo-value').textContent = `${$
 $('stop').addEventListener('click', stop);
 $('play').addEventListener('click', async () => {
   if (stream || acquiring || busy) { $('status').textContent = '録音・解析が終わってから試聴してください。'; return; }
-  stop(); $('play').disabled = true; $('stop').disabled = false;
+  editor.stop(); stop(); $('play').disabled = true; $('stop').disabled = false;
   try {
     context ||= new AudioContext(); await context.resume();
     if (!$('play').disabled) return;
@@ -59,7 +61,14 @@ $('copy').addEventListener('click', async () => {
 render();
 
 let recording, stream, recordTimer, previewURL, audioBlob, analysis, sourceIsRecording = false, busy = false, acquiring = false;
+const editor = new PianoRoll($('piano-roll'), (notes, duration) => {
+  analysis = notesToAnalysis(notes, duration);
+  $('candidates').replaceChildren();
+  $('melody-status').textContent = 'メロディを編集しました。候補を再生成してください。';
+});
+editor.beforePlay = () => { stop(); $('melody-preview').pause(); };
 function updateAudioControls() {
+  editor.setDisabled(busy || acquiring || Boolean(stream));
   $('record').disabled = busy || acquiring || Boolean(stream);
   $('audio-file').disabled = busy || acquiring || Boolean(stream);
   $('analyze').disabled = busy || acquiring || Boolean(stream);
@@ -72,7 +81,7 @@ function releaseMicrophone() {
 }
 function loadAudio(blob, recorded = false) {
   if (recorded) $('audio-file').value = '';
-  audioBlob = blob; analysis = null; sourceIsRecording = recorded;
+  audioBlob = blob; analysis = null; sourceIsRecording = recorded; editor.clear();
   $('melody-preview').pause();
   if (previewURL) URL.revokeObjectURL(previewURL);
   previewURL = URL.createObjectURL(blob);
@@ -85,7 +94,7 @@ $('record').addEventListener('click', async () => {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
     $('melody-status').textContent = '録音にはHTTPSと録音対応ブラウザが必要です。音声ファイルの読み込みをご利用ください。'; return;
   }
-  acquiring = true; updateAudioControls(); stop(); $('melody-preview').pause();
+  acquiring = true; editor.stop(); updateAudioControls(); stop(); $('melody-preview').pause();
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     recording = new MediaRecorder(stream);
@@ -114,7 +123,7 @@ for (const event of ['input', 'change']) $('audio-file').addEventListener(event,
 
 function runAnalysis(samples, sampleRate) {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./melody-worker.js?v=3', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./melody-worker.js?v=4', import.meta.url), { type: 'module' });
     const timeout = setTimeout(() => { worker.terminate(); reject(new Error('解析がタイムアウトしました。短い音声で再試行してください。')); }, 60000);
     const finish = () => { clearTimeout(timeout); worker.terminate(); };
     worker.onmessage = ({ data }) => { finish(); if (data.error) reject(new Error(data.error)); else resolve(data.result); };
@@ -125,7 +134,7 @@ function runAnalysis(samples, sampleRate) {
 $('analyze').addEventListener('click', async () => {
   if (busy || acquiring || stream || !readSelectedFile()) return;
   if (!audioBlob) { $('melody-status').textContent = '音声ファイルを選ぶか、メロディを録音してください。'; return; }
-  busy = true; updateAudioControls(); stop(); $('melody-preview').pause(); $('candidates').replaceChildren();
+  busy = true; editor.stop(); updateAudioControls(); stop(); $('melody-preview').pause(); $('candidates').replaceChildren();
   $('melody-status').textContent = '音声を解析しています…';
   try {
     if (!analysis) {
@@ -140,9 +149,11 @@ $('analyze').addEventListener('click', async () => {
         for (let i = 0; i < samples.length; i++) samples[i] += data[i] / buffer.numberOfChannels;
       }
       analysis = await runAnalysis(samples, buffer.sampleRate);
+      editor.load(analysis, estimateTempo(analysis.onsets).bpm || 100);
     }
     const result = harmonizeMelody(analysis);
     const { candidates, tonality, tempo } = result;
+    editor.bpm = tempo.bpm || 100;
     const settings = { key: tonality.key, mode: tonality.mode, bpm: tempo.bpm || 100 };
     const detected = [...new Set(analysis.notes.map(note => KEYS[note.midi % 12]))];
     const modeName = mode => mode === 'major' ? 'メジャー' : 'マイナー';
@@ -163,7 +174,7 @@ $('analyze').addEventListener('click', async () => {
   } catch (error) { $('melody-status').textContent = error.message; }
   finally { busy = false; updateAudioControls(); }
 });
-window.addEventListener('pagehide', () => { if (recording?.state === 'recording') recording.stop(); releaseMicrophone(); if (previewURL) URL.revokeObjectURL(previewURL); });
+window.addEventListener('pagehide', () => { editor.stop(); if (recording?.state === 'recording') recording.stop(); releaseMicrophone(); if (previewURL) URL.revokeObjectURL(previewURL); });
 
 updateAudioControls();
 readSelectedFile();
